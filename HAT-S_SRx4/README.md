@@ -1,200 +1,215 @@
 # Visual Recognition using Deep Learning Project
 
-本專案使用 **HAT-S ×4 Super Resolution model** 進行影像超解析度任務。  
-主要做法是以 `HAT-S_SRx4.pth` 作為 pretrained model，搭配 clean data filtering、fine-tuning、checkpoint resume，以及 8x TTA 產生最終 submission。
+## HAT-S ×4 Super-Resolution Fine-Tuning
+
+This project fine-tunes a **HAT-S ×4 Super-Resolution model** for the Kaggle video game super-resolution task. The main pretrained checkpoint used in this experiment is:
+
+```text
+HAT-S_SRx4.pth
+```
+
+The overall method is similar to the competition reference code that achieved around **PSNR = 33.5**, with additional data cleaning, fine-tuning, checkpoint selection, and **8x Test-Time Augmentation (TTA)** during inference.
 
 ---
 
-## 1. Main Experiment Setting
+## Training Summary
 
-| 項目 | 設定 |
-|---|---|
-| Model | `HAT-S_SRx4.pth` |
-| Task | ×4 Super Resolution |
-| TTA | 8x TTA, Test-Time Augmentation |
-| Main training data | clean training dataset |
-| Baseline reference | 其他基本做法與競賽中 PSNR=33.5 的 code 類似 |
+The learning rate schedule and training stages were configured as follows:
 
-Learning rate 與 iteration 設定：
+| Iteration Range | Learning Rate Setting |
+|---:|---|
+| 1–30000 | Constant LR = `1e-4` |
+| 30001–50000 | Cosine schedule from `1e-4` to `1e-5` |
+| 50001–70000 | Constant LR = `1e-4` |
 
-| Iteration range | Learning rate setting |
-|---|---|
-| 1 ~ 30000 | `1e-4` constant LR |
-| 30001 ~ 50000 | cosine schedule, `1e-4` → `1e-5` |
-| 50001 ~ 70000 | `1e-4` constant LR, but score became worse than 50000 iter |
+The model trained to **70000 iterations**, but the score at 70000 iterations was worse than the score at 50000 iterations. Therefore, the **50000-iteration checkpoint** was selected as the best checkpoint.
 
 ---
 
-## 2. Score Result
+## Kaggle Scores
 
-| Iteration | 30000 | 50000 | 70000 |
-|---|---:|---:|---:|
-| Private score | 33.481 | **33.629** | 33.581 |
-| Public score | 33.470 | **33.631** | 33.570 |
+| Iteration | Private Score | Public Score |
+|---:|---:|---:|
+| 30000 | 33.481 | 33.470 |
+| 50000 | **33.629** | **33.631** |
+| 70000 | 33.581 | 33.570 |
 
-另外有使用 `iter50000` checkpoint 關掉 TTA 測試：
+The 50000-iteration model was also tested without TTA. The private score without TTA was:
 
-| Setting | Private score |
-|---|---:|
-| Without TTA, iter50000 | 33.594 |
-| With 8x TTA, iter50000 | **33.629** |
+```text
+Private score without TTA at iter 50000: 33.594
+```
 
-因此本次結果顯示使用 8x TTA 會比不使用 TTA 更好。
+Since the private score with 8x TTA was **33.629**, TTA improved the final result.
 
 ---
 
-## 3. Model Architecture: HAT-S SRx4
+## Model Architecture
 
-使用 **HAT-S ×4 Super Resolution model**。
+The model used in this project is **HAT-S ×4 Super Resolution**.
 
-| 參數 | HAT-S SRx4 使用值 | 說明 |
+| Parameter | HAT-S SRx4 Value | Description |
 |---|---:|---|
-| `type` | `HAT` | 一樣是 HAT 架構 |
-| `upscale` | 4 | ×4 超解析度 |
+| `type` | `HAT` | Hybrid Attention Transformer architecture |
+| `upscale` | 4 | ×4 super-resolution |
 | `in_chans` | 3 | RGB input |
 | `img_size` | 64 | LR patch reference size |
-| `window_size` | 16 | window attention 大小 |
-| `embed_dim` | **144** | feature channel 數，比 full HAT 小 |
-| `depths` | `[6,6,6,6,6,6]` | 6 個 stage，每個 stage 6 blocks |
-| `num_heads` | `[6,6,6,6,6,6]` | 每個 stage 6 heads |
-| `mlp_ratio` | 2 | MLP hidden dim = 2 × embed dim |
-| `compress_ratio` | **24** | channel attention 壓縮比例 |
-| `squeeze_factor` | **24** | channel squeeze 參數 |
-| `conv_scale` | 0.01 | convolution branch scaling |
-| `overlap_ratio` | 0.5 | overlapping cross-attention 比例 |
-| `upsampler` | `pixelshuffle` | 上採樣方式 |
-| `resi_connection` | `1conv` | residual connection 使用 1 convolution |
-| `img_range` | 1.0 | input range 為 0~1 |
-| `param_key_g` | `params_ema` | 載入 EMA 權重 |
-| `strict_load_g` | true | 嚴格對齊權重名稱 |
+| `window_size` | 16 | Window attention size |
+| `embed_dim` | **144** | Feature channel dimension, smaller than full HAT |
+| `depths` | `[6,6,6,6,6,6]` | 6 stages, with 6 blocks in each stage |
+| `num_heads` | `[6,6,6,6,6,6]` | 6 attention heads in each stage |
+| `mlp_ratio` | 2 | MLP hidden dimension = 2 × embed dimension |
+| `compress_ratio` | **24** | Channel attention compression ratio |
+| `squeeze_factor` | **24** | Channel squeeze factor |
+| `conv_scale` | 0.01 | Convolution branch scaling factor |
+| `overlap_ratio` | 0.5 | Overlapping cross-attention ratio |
+| `upsampler` | `pixelshuffle` | Upsampling method |
+| `resi_connection` | `1conv` | Residual connection with one convolution layer |
+| `img_range` | 1.0 | Input image range is 0 to 1 |
+| `param_key_g` | `params_ema` | Load EMA parameters from checkpoint |
+| `strict_load_g` | `true` | Strictly match checkpoint parameter names |
 
 ---
 
-## 4. Full HAT vs HAT-S Difference
+## Difference Between Full HAT and HAT-S
 
-兩個模型最重要差異如下：
+The most important differences between `HAT_SRx4.pth` and `HAT-S_SRx4.pth` are listed below.
 
-| 參數 | `HAT_SRx4.pth` full HAT | `HAT-S_SRx4.pth` HAT-S |
+| Parameter | `HAT_SRx4.pth` Full HAT | `HAT-S_SRx4.pth` HAT-S |
 |---|---:|---:|
 | `embed_dim` | 180 | 144 |
 | `compress_ratio` | 3 | 24 |
 | `squeeze_factor` | 30 | 24 |
-| Params | 約 20.8M | 約 9.6M |
-| Multi-Adds | 約 102.4G | 約 54.9G |
+| Parameters | About 20.8M | About 9.6M |
+| Multi-Adds | About 102.4G | About 54.9G |
+
+HAT-S is smaller and lighter than the full HAT model, making it more suitable for faster fine-tuning and inference.
 
 ---
 
-## 5. Training Data Parameters
+## Training Data Parameters
 
-| 參數 | 值 | 意義 |
+| Parameter | Value | Description |
 |---|---:|---|
-| `BATCH_SIZE` | `4` | 每個 batch 使用 4 張 crop |
-| `GT_SIZE` | `256` | HR crop 大小為 256×256 |
-| `SCALE` | `4` | 放大倍率 ×4 |
-| LR crop size | `64` | 由 `256 / 4` 得到 |
-| `ENABLE_HOLDOUT_VAL` | `False` | 不切 validation，全部 clean data 都拿來訓練 |
-| `num_worker_per_gpu` | `2` | DataLoader worker 數 |
-| `dataset_enlarge_ratio` | `1` | 不額外放大 dataset |
-| `prefetch_mode` | `cuda` | 使用 CUDA prefetch |
-| `pin_memory` | `True` | 加速 CPU→GPU 資料搬移 |
+| `BATCH_SIZE` | `4` | 4 cropped image pairs per batch |
+| `GT_SIZE` | `256` | HR crop size is 256×256 |
+| `SCALE` | `4` | ×4 super-resolution scale |
+| LR crop size | `64` | Calculated from `256 / 4` |
+| `ENABLE_HOLDOUT_VAL` | `False` | No validation split; all clean data is used for training |
+| `num_worker_per_gpu` | `2` | Number of DataLoader workers |
+| `dataset_enlarge_ratio` | `1` | Dataset is not enlarged |
+| `prefetch_mode` | `cuda` | CUDA prefetch is used |
+| `pin_memory` | `True` | Speeds up CPU-to-GPU data transfer |
 
 ---
 
-## 6. Data Cleaning Parameters
+## Data Cleaning Parameters
 
-| 參數 | 值 | 意義 |
+| Parameter | Value | Description |
 |---|---:|---|
-| `CLEAN_PSNR_THRESHOLD` | `18.0` | PSNR 低於 18 的 pair 視為可疑 |
-| `USE_CLEAN_SYMLINK_DATA` | `True` | 建立 clean dataset 的 symlink |
-| `USE_PREVIOUS_CLEAN_REPORT` | `True` | 優先使用之前算好的清理報告 |
-| `PREVIOUS_CLEAN_REPORT` | `clean_pair_report.csv` | 舊的清理報告路徑 |
-| `FORCE_REBUILD_CLEAN_DATA` | `False` | 不強制重算 clean report |
-| `USE_PUBLIC_SUSPECT_TXT` | `True` | 如果有 suspect list，也會排除 |
-| `PUBLIC_SUSPECT_PATTERNS` | `suspects*.txt` | 可疑圖片清單搜尋路徑 |
+| `CLEAN_PSNR_THRESHOLD` | `18.0` | Pairs with PSNR lower than 18 are treated as suspicious |
+| `USE_CLEAN_SYMLINK_DATA` | `True` | Use symlinks to build the clean dataset |
+| `USE_PREVIOUS_CLEAN_REPORT` | `True` | Prefer a previously generated clean report |
+| `PREVIOUS_CLEAN_REPORT` | `clean_pair_report.csv` | Path to the previous clean report |
+| `FORCE_REBUILD_CLEAN_DATA` | `False` | Do not force rebuilding the clean report |
+| `USE_PUBLIC_SUSPECT_TXT` | `True` | Also exclude images listed in the public suspect list, if available |
+| `PUBLIC_SUSPECT_PATTERNS` | `suspects*.txt` | Search pattern for suspect image lists |
 
-Data cleaning 流程：
+The data cleaning process is:
 
 ```text
-LR image 用 bicubic 放大到 HR 尺寸
-→ 跟真正 HR image 計算 PSNR
-→ 如果 PSNR < 18.0，認為 LR/HR 可能配錯
-→ 丟掉該 training pair
+LR image → bicubic upsampling to HR size
+          → compare with the real HR image using PSNR
+          → if PSNR < 18.0, the LR/HR pair is considered suspicious
+          → remove the suspicious training pair
 ```
 
-建立 clean dataset：
+The cleaned dataset is built at:
 
 ```text
 /kaggle/working/clean_train/hr
 /kaggle/working/clean_train/lr
 ```
 
-後續訓練使用這兩個資料夾。
+These two folders are then used as the training dataset.
 
 ---
 
-## 7. Optimizer / Loss / LR Parameters
+## Optimizer, Loss, and Learning Rate Parameters
 
-> 注意：LR 和實際跑的 iteration 數以最上方的 experiment setting 為準。
+> The actual learning rate and iteration settings follow the training summary at the top of this README.
 
-| 參數 | 值 | 意義 |
+| Parameter | Value | Description |
 |---|---:|---|
 | `LEARNING_RATE` | `1e-4` | Adam learning rate |
-| `ADAM_BETAS` | `[0.9, 0.99]` | Adam beta 參數 |
-| `WEIGHT_DECAY` | `0.0` | 不使用 weight decay |
-| `EMA_DECAY` | `0.999` | EMA 權重更新係數 |
-| `WARMUP_ITER` | `-1` | 不使用 warmup |
-| Optimizer | `Adam` | 最佳化器 |
-| Loss | `L1Loss` | 使用 L1 pixel loss |
-| Scheduler | `MultiStepRestartLR` | 但實際上等於 constant LR |
-| Scheduler milestone | `[10**12]` | 幾乎不會觸發 |
-| Scheduler gamma | `1.0` | 即使觸發也不改變 LR |
+| `ADAM_BETAS` | `[0.9, 0.99]` | Adam beta parameters |
+| `WEIGHT_DECAY` | `0.0` | No weight decay |
+| `EMA_DECAY` | `0.999` | EMA update coefficient |
+| `WARMUP_ITER` | `-1` | No warmup |
+| Optimizer | `Adam` | Optimizer used for fine-tuning |
+| Loss | `L1Loss` | Pixel-level L1 loss |
+| Scheduler | `MultiStepRestartLR` | Practically equivalent to constant LR in the base setting |
+| Scheduler milestone | `[10**12]` | The milestone is almost never reached |
+| Scheduler gamma | `1.0` | LR remains unchanged even if the milestone is reached |
 
 ---
 
-## 8. Overall Training Flow
+## Overall Workflow
 
-1. **準備環境**  
-   安裝套件、下載 HAT repository，並載入 HAT-S SRx4 pretrained model。
+1. **Prepare the environment**
 
-2. **清理資料**  
-   將 `train/lr` 用 bicubic 放大後和 `train/hr` 比較 PSNR。  
-   PSNR < 18.0 的 LR/HR pair 視為可疑並移除。
+   Install the required packages, download the HAT repository, and load the pretrained HAT-S SRx4 model.
 
-3. **建立 clean training dataset**  
-   使用 `clean_train/lr` 和 `clean_train/hr` 作為訓練資料。
+2. **Clean the training data**
 
-4. **Fine-tune 模型**  
-   輸入 LR crop 64×64，輸出 HR crop 256×256。  
-   使用 L1 Loss 訓練 HAT-S SRx4。  
-   Optimizer 使用 Adam，learning rate = `1e-4`。
+   Upsample `train/lr` images with bicubic interpolation and compare them with `train/hr` images using PSNR. LR/HR pairs with PSNR lower than 18.0 are treated as suspicious and removed.
 
-5. **儲存 checkpoint**  
-   每 1000 iterations 存一次模型。  
-   本次主要目標訓練到 50000 iterations。
+3. **Build the clean training dataset**
 
-6. **推論 test/lr**  
-   使用最新 checkpoint 對測試圖片做 ×4 super resolution。
+   Use the following folders as the final training dataset:
 
-7. **使用 8x TTA**  
-   對圖片做翻轉、轉置推論，再把 8 個結果平均。
+   ```text
+   clean_train/lr
+   clean_train/hr
+   ```
 
-8. **產生 submission.csv**  
-   將輸出的 HR 圖片 encode 成 Kaggle 規定格式。
+4. **Fine-tune the model**
+
+   The model receives a 64×64 LR crop as input and predicts a 256×256 HR crop. HAT-S SRx4 is fine-tuned using L1 Loss, Adam optimizer, and LR = `1e-4`.
+
+5. **Save checkpoints**
+
+   A checkpoint is saved every 1000 iterations. Although the model was trained up to 70000 iterations, the 50000-iteration checkpoint was selected because it achieved the best score.
+
+6. **Run inference on `test/lr`**
+
+   Use the selected checkpoint to perform ×4 super-resolution on test LR images.
+
+7. **Apply 8x Test-Time Augmentation**
+
+   Each test image is transformed using flipping and transposition. The model predicts all 8 augmented versions, and the outputs are transformed back and averaged.
+
+8. **Generate `submission.csv`**
+
+   The final HR images are encoded into the Kaggle submission format and saved as `submission.csv`.
 
 ---
 
-## 9. Final Selected Model
+## Final Selected Setting
 
-本次實驗中，`iter50000` 的結果最好：
-
-```text
-Private score: 33.629
-Public score : 33.631
-```
-
-因此最終選擇：
+The best final setting is:
 
 ```text
-Model checkpoint: HAT-S SRx4 iter50000
-Inference method: 8x TTA
+Model: HAT-S_SRx4.pth
+Checkpoint: iter 50000
+Batch size: 4
+GT patch size: 256
+LR crop size: 64
+Optimizer: Adam
+Loss: L1Loss
+EMA decay: 0.999
+Data cleaning threshold: PSNR < 18.0 removed
+Inference: 8x TTA
+Best private score: 33.629
+Best public score: 33.631
 ```
